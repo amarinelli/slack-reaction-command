@@ -1,10 +1,8 @@
-// server.js
-// where your node app starts
-
-// init project
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
+
+const reacji = require('./reacji');
 
 const app = express();
 
@@ -15,10 +13,12 @@ app.get('/', (req, res) => {
   res.send('<h2>Hi there</h2> <p>This is an integration that lists your reactions ✌️</p>');
 });
 
+// Slash command endpoint
+
 app.post('/reactions', (req, res) => {
   const token = req.body.token;
   
-  //intentionally left blank to suppress messaging and avoid operation_timeout errors
+  // Intentionally left blank to suppress messaging and avoid operation_timeout errors
   res.send("");
   
   if (token === process.env.SLACK_VERIFICATION_TOKEN) {
@@ -56,52 +56,57 @@ app.post('/reactions', (req, res) => {
   }  
 })
 
-function recentReactions (resp, id) {
-  let recent_reactions = [];
-  for (var i=0; i<resp.data.items.length;i++) {
-    for (var j=0; j<resp.data.items[i].message.reactions.length; j++) {
-      if (resp.data.items[i].message.reactions[j].users.includes(id)) {
-        recent_reactions.push(':' + resp.data.items[i].message.reactions[j].name + ':');
-        if (recent_reactions.length == 5) {
-          return recent_reactions 
-        }
-      }
-    }
-  }
-  return recent_reactions
-}
-
+// Interactive message buttons endpoint
+// Two options: RECENT button click or FREQUENT button click
 app.post('/interactive', (req, res) => {
   const body = JSON.parse(req.body.payload);
   
+  // RECENT button
   if (body.actions[0].value == 'recent') {
-    axios.get('https://slack.com/api/reactions.list', {
-       params: {
-         token: process.env.ACCESS_TOKEN,
-         user: body.user.id
-       }
-    })
-    .then(function (resp) {
-      let recents = recentReactions(resp, body.user.id);
-      console.log(recents);
-      axios.post(body.response_url, {
-        text: '*Here are your last five used reactions*:',
-        attachments: [
-          {
-            text: recents.join(" ")
-          }
-        ]
-      })
-    })
-    .catch(function (error) {
-      console.log(error);
-    });
-  } else {
     
+    reacji.reactionsList(body.user.id, 5)
+      .then(function (resp) {
+        let recents = reacji.reactionUtility(resp, body.user.id, 5);
+
+          axios.post(body.response_url, {
+            text: '*Here are your last five used reactions*:',
+            attachments: [
+              {
+                text: recents.join(" ")
+              }
+            ]
+          })
+      })
+      .catch(function (error) {
+        console.log(error);
+      });
   }
+  
+  // FREQUENT button
+  else if (body.actions[0].value == 'frequent') {
+    reacji.reactionsList(body.user.id)
+      .then(function (resp) {
+        let frequent = reacji.reactionUtility(resp, body.user.id);
+
+          axios.post(body.response_url, {
+            text: '*Here are your most frequently used reaction*:',
+            attachments: [
+              {
+                text: frequent
+              }
+            ]
+          })
+      })
+      .catch(function (error) {
+        console.log(error);
+      });
+  }
+  
+  // Intentionally left blank to suppress messaging and avoid operation_timeout errors
+  res.send("");
 })
 
-// listen for requests :)
+// Listen for requests
 const listener = app.listen(process.env.PORT, () => {
   console.log(`Your app is listening on port ${listener.address().port}`)
 })
